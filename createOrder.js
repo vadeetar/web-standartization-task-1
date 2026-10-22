@@ -1,12 +1,19 @@
-async function createOrder(req, res) {
-    
-  const body = JSON.parse(req.body);                    // HTTP
-  if (!body.items.length) return res.status(400).send("empty"); // HTTP
-  let total = 0;
-  for (const i of body.items) total += i.price * i.qty; // предметная область
-  if (total > 10000) total *= 0.95;                     // предметная область
-  await db.query("INSERT INTO orders (user_id, total) VALUES ($1, $2)",
-                 [req.user.id, total]);                 // хранилище
-  await smtp.send(req.user.email, "Заказ принят");      // почта
-  res.status(201).send(JSON.stringify({ total }));      // HTTP
+const { EmptyOrderError } = require("./domain/Order");
+
+function makeCreateOrderHandler(createOrder) {
+  return async function createOrderHandler(req, res) {
+    const body = JSON.parse(req.body);
+    let order;
+    try {
+      order = await createOrder.execute({ user: req.user, items: body.items });
+    } catch (error) {
+      if (error instanceof EmptyOrderError) {
+        return res.status(400).send("empty");
+      }
+      throw error;
+    }
+    return res.status(201).send(JSON.stringify({ total: order.total }));
+  };
 }
+
+module.exports = { makeCreateOrderHandler };
